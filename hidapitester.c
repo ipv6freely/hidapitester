@@ -5,6 +5,7 @@
  *
  */
 
+
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
@@ -16,7 +17,7 @@
 #include "hidapi.h"
 
 
-#define MAX_STR 1024  // for manufacturer, product strings
+#define MAX_STR 1024  // for manufacturer, product strings, serial numbers
 #define MAX_BUF 1024  // for buf reads & writes
 
 
@@ -29,6 +30,7 @@ static void print_usage(char *myname)
 "  --vidpid <vid/pid>          Filter by vendorId/productId (comma/slash delim)\n"
 "  --usagePage <number>        Filter by usagePage \n"
 "  --usage <number>            Filter by usage \n"
+"  --serialNumber <serial>    Filter by Serial Number\n"
 "  --list                      List HID devices (by filters)\n"
 "  --list-usages               List HID devices w/ usages (by filters)\n"
 "  --list-detail               List HID devices w/ details (by filters)\n"
@@ -48,7 +50,7 @@ static void print_usage(char *myname)
 "\n"
 "Notes: \n"
 " . Commands are executed in order. \n"
-" . --vidpid, --usage, --usagePage act as filters to --open and --list \n"
+" . --vidpid, --usage, --usagePage, --serialNumber act as filters to --open and --list \n"
 "\n"
 "Examples: \n"
 ". List all devices \n"
@@ -75,6 +77,7 @@ enum {
     CMD_VIDPID,
     CMD_USAGE,
     CMD_USAGEPAGE,
+    CMD_SERIAL,
     CMD_LIST,
     CMD_LIST_USAGES,
     CMD_LIST_DETAIL,
@@ -155,6 +158,15 @@ int str2buf(void* buffer, char* delim_str, char* string, int buflen, int bufelem
     return pos;
 }
 
+void ctow(char *toConvert, wchar_t *wstr) {
+    int count = 0;
+    int len = strlen(toConvert);
+
+    for(; count < len; count++) {
+        wstr[count] = (wchar_t) toConvert[count];
+    }
+}
+
 /**
  *
  */
@@ -173,8 +185,9 @@ int main(int argc, char* argv[])
     uint16_t pid = 0;        // vendorId
     uint16_t usage_page = 0; // usagePage to search for, if any
     uint16_t usage = 0;      // usage to search for, if any
+    char serialNumber[MAX_STR];    // serialNumber to search for, if any
+    wchar_t serialNumberOpen[MAX_STR];    // send serialNumber hidapi as wchar_t
     char devpath[MAX_STR];   // path to open, if filter by usage
-
     setbuf(stdout, NULL);  // turn off buffering of stdout
 
     if(argc < 2){
@@ -194,6 +207,7 @@ int main(int argc, char* argv[])
          {"vidpid",       required_argument, &cmd,   CMD_VIDPID},
          {"usage",        required_argument, &cmd,   CMD_USAGE},
          {"usagePage",    required_argument, &cmd,   CMD_USAGEPAGE},
+         {"serialNumber", required_argument, &cmd,   CMD_SERIAL},
          {"list",         no_argument,       &cmd,   CMD_LIST},
          {"list-usages",  no_argument,       &cmd,   CMD_LIST_USAGES},
          {"list-detail",  no_argument,       &cmd,   CMD_LIST_DETAIL},
@@ -249,6 +263,11 @@ int main(int argc, char* argv[])
                 }
                 msginfo("Set usage to 0x%04hX (%d)\n", usage,usage);
             }
+            else if( cmd == CMD_SERIAL ) {
+
+                snprintf(serialNumber, MAX_STR, "%s", optarg);
+
+            }
             else if( cmd == CMD_LIST ||
                      cmd == CMD_LIST_USAGES ||
                      cmd == CMD_LIST_DETAIL ) {
@@ -276,7 +295,7 @@ int main(int argc, char* argv[])
                             printf("  productId:     0x%04hX\n", cur_dev->product_id);
                             printf("  usagePage:     0x%04hX\n", cur_dev->usage_page);
                             printf("  usage:         0x%04hX\n", cur_dev->usage );
-                            printf("  serial_number: %ls \n", cur_dev->serial_number);
+                            printf("  serialNumber: %ls \n", cur_dev->serial_number);
                             printf("  interface:     %d \n", cur_dev->interface_number);
                             printf("  path: %s\n",cur_dev->path);
                             printf("\n");
@@ -287,8 +306,13 @@ int main(int argc, char* argv[])
                 hid_free_enumeration(devs);
             }
             else if( cmd == CMD_OPEN ) {
-                if( vid && pid && !usage_page && !usage ) {
-                    msg("Opening device, vid/pid: 0x%04X/0x%04X\n",vid,pid);
+                if( vid && pid && *serialNumber != 0 && !usage_page && !usage ) {
+                    msg("Opening device, vid/pid: 0x%04X/0x%04X with serial number %s \n",vid,pid,serialNumber);
+                    ctow(serialNumber,serialNumberOpen);
+                    dev = hid_open(vid,pid,serialNumberOpen);
+                }
+                else if( vid && pid && !usage_page && !usage ) {
+                    msg("Opening device, vid/pid: 0x%04X/0x%04X\n",vid,pid,NULL);
                     dev = hid_open(vid,pid,NULL);
                 }
                 else {
